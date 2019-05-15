@@ -1,12 +1,12 @@
 module ImageCaptioning
 
 using Knet
+using Images, FileIO
 using Sloth
-using Images
 using JLD2
 using MAT
 using JSON
-using FileIO
+
 using Random
 
 const FloatArray = Union{KnetArray{F}, Array{F}} where F <: AbstractFloat

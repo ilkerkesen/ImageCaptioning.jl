@@ -92,7 +92,6 @@ function iterate(d::DataLoader, state=ifelse(d.shuffle,
     words[:,1] .= sos
 
     images = []
-    println("lan")
     if false # d.use_features
 
     else
