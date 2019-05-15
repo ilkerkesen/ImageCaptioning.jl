@@ -1,0 +1,12 @@
+name = "ImageCaptioning"
+uuid = "b30ecf1c-76eb-11e9-3167-29819cb86e58"
+authors = ["Ilker Kesen <ilkerksn@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+Knet = "1902f260-5fb4-5aff-8c31-6271790ab950"
+MAT = "23992714-dd62-5051-b70f-ba57cb901cac"
+Sloth = "599f0d3e-fa5b-11e8-3d5f-e1ebc21cfa8f"
