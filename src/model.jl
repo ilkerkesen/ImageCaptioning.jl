@@ -78,7 +78,7 @@ end
 function load_vgg(filepath; atype=Sloth._atype, features="conv5")
     convnet = VGG(; atype=atype)
     vggmat = matconvnet(filepath)
-    load_weights!(convnet, vggmat)
+    Sloth.load_weights!(convnet, vggmat)
     drop_last_nitems = 2
     if features == "pool5"
         drop_last_nitems = 5
