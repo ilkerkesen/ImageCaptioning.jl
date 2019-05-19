@@ -1,1 +1,5 @@
 *~
+eval/*.txt
+eval/ref*
+eval/hyp
+data
