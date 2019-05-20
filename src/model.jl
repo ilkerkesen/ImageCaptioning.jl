@@ -123,7 +123,8 @@ mutable struct Attention
 end
 
 
-function Attention(features_dim, condition_dim, output_dim; atype=Sloth._atype)
+function Attention(features_dim::Int, condition_dim::Int, output_dim::Int;
+                   atype=Sloth._atype)
     features_layer = Linear(features_dim, output_dim; atype=atype)
     condition_layer = Linear(condition_dim, output_dim; atype=atype)
     scores_layer = Linear(output_dim, 1; atype=atype)
@@ -135,9 +136,9 @@ function (l::Attention)(a, c)
     # features projection - a little bit tricky
     L1, L2, D, B = size(a); L = L1*L2
     a = reshape(a, :, D, B)
-    a = permutedims(a, (2,1,3))
-    a = reshape(a, D, :)
-    a1 = l.features_layer(a)
+    a0 = permutedims(a, (2,1,3))
+    a0 = reshape(a0, D, :)
+    a1 = l.features_layer(a0)
     a2 = reshape(a1, :, L, B)
 
     # condition projection
@@ -150,8 +151,11 @@ function (l::Attention)(a, c)
     scores = reshape(l.scores_layer(et), L, B)
     probs = softmax(scores, dims=2)
 
-    α = reshape(probs, 1, L, B)
+    α = reshape(probs, L, 1, B)
     context = α .* a
+    context = sum(context, dims=1)
+
+    α = reshape(α, L, B)
     context = reshape(context, D, B)
     return α, context
 end
