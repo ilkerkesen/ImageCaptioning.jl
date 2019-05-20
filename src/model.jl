@@ -37,7 +37,9 @@ function ShowAndTell(; features="conv5", freeze_convnet=true, hiddensize=512,
     end
     project = Linear(features_dim, embedsize; atype=atype)
     embedding = Embedding(vocabsize, embedsize; atype=atype)
-    decoder = RNN(embedsize, hiddensize)
+    usegpu = atype <: KnetArray
+    dataType = eltype(atype)
+    decoder = RNN(embedsize, hiddensize; usegpu=usegpu, dataType=dataType)
     predict = Linear(hiddensize, vocabsize; atype=atype)
     ShowAndTell(convnet, project, embedding, decoder, predict,
                 pdrop, freeze_convnet)
@@ -51,7 +53,9 @@ function ShowAttendAndTell(; features="conv5", freeze_convnet=true, hiddensize=5
         vggfile; atype=atype, features=features, freeze=freeze_convnet)
     features_dim = 512
     embedding = Embedding(vocabsize, embedsize; atype=atype)
-    decoder = RNN(embedsize+features_dim, hiddensize)
+    usegpu = atype <: KnetArray
+    dataType = eltype(atype)
+    decoder = RNN(embedsize+features_dim, hiddensize; usegpu=usegpu, dataType=dataType)
     predict = Linear(hiddensize, vocabsize; atype=atype)
     attention = Attention(features_dim, hiddensize, features_dim; atype=atype)
     ShowAttendAndTell(convnet, embedding, decoder, predict, attention,
@@ -60,7 +64,7 @@ end
 
 
 function loss(net::CaptionNetwork, image, words; pdrop=net.pdrop)
-    visual = extract_features(net, image)
+    visual = extract_features(net, image; pdrop=pdrop)
     initstate!(net, visual)
     input_words, output_words = words[:, 1:end-1], words[:, 2:end]
     scores, _ = decode(net, visual, input_words; pdrop=pdrop)
@@ -68,24 +72,26 @@ function loss(net::CaptionNetwork, image, words; pdrop=net.pdrop)
 end
 
 
-function extract_features(net::ShowAndTell, image)
+
+
+function extract_features(net::ShowAndTell, image; pdrop=net.pdrop)
     x = image
     ndims(x) == 2 && return x
     if ndims(x) == 4 && size(x,3) == 3
         x = net.convnet(x)
     end
-    ndims(x) == 2 && return x
-    D, B = size(x)[end-1:end]
-    wsize = size(x,1)
-    # x = reshape(x, :, D, B)
-    # x = mean(x, dims=1)
-    x = pool(x; window=wsize, mode=2)
-    x = reshape(x, D, B)
+    if ndims(x) != 2
+        D, B = size(x)[end-1:end]
+        wsize = size(x,1)
+        x = pool(x; window=wsize, mode=2)
+        x = reshape(x, D, B)
+    end
+    x = dropout(x, pdrop; drop=pdrop>0.0)
     x = net.project(x)
 end
 
 
-function extract_features(net::ShowAttendAndTell, image)
+function extract_features(net::ShowAttendAndTell, image; pdrop=net.pdrop)
     size(image,3) != 3 && return image
     features = net.convnet(image)
 end
@@ -94,6 +100,7 @@ end
 function initstate!(net::ShowAndTell, visual)
     net.decoder.h = 0
     net.decoder.c = 0
+    net.decoder(visual)
 end
 
 
@@ -107,7 +114,7 @@ end
 
 
 function decode(net::ShowAndTell, visual, input_words; pdrop=net.pdrop)
-    net.decoder(visual)
+    # net.decoder(visual)
     embed = net.embedding(input_words)
     embed = dropout(embed, pdrop; drop=pdrop>0.0)
     hidden = net.decoder(embed)
@@ -136,10 +143,9 @@ end
 
 
 function decode(net::CaptionNetwork, vocab::Vocabulary, visual, maxlen=20)
-    sos = vocab.w2i["<sos>"]
-    eos = vocab.w2i["<eos>"]
-    pad = vocab.w2i["<pad>"]
-    words = Any[sos]
+    obsolete = Any["<sos>","<eos>","<pad>","<unk>"]
+    obsolete = Any[vocab.w2i[w] for w in obsolete]
+    words = Any[first(obsolete)]
     other = []
 
     for t = 1:maxlen
@@ -147,12 +153,11 @@ function decode(net::CaptionNetwork, vocab::Vocabulary, visual, maxlen=20)
         hidden, o = step!(net, visual, prev_word; pdrop=0.0)
         scores = net.predict(hidden)
         next_word = argmax(Array(scores))[1]
-        next_word in (eos, pad) && break
         push!(words, next_word)
         push!(other, o)
     end
 
-    popfirst!(words)
+    words = filter(i->!(i in obsolete), words)
     words = [map(w->vocab.i2w[w], words)..., "."]
     sentence = join(words, " ")
     return sentence, other
