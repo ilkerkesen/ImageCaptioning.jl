@@ -17,8 +17,7 @@ function Dataset(root_path, features_suffix="default")
     get_split(x) = filter(entry->entry["split"]==x, jsondata["images"])
     trn, val, tst = [get_split(x) for x in ("train","val","test")]
     trn, val, tst = [get_instances(x) for x in (trn, val, tst)]
-    EVAL_DIR = mktempdir()
-    @show EVAL_DIR
+    global EVAL_DIR = mktempdir()
     prepare_references(val, "val")
     prepare_references(tst, "tst")
     name = jsondata["dataset"]

@@ -1,8 +1,11 @@
-EVAL_DIR = mktempdir()
-
 function BLEU(net::CaptionNetwork, data, data_split="val"; maxlen=20)
     path = abspath(EVAL_DIR, data_split)
-    captions = map((img,ref,fn)->generate(net, data.vocab, img)[1], data)
+    captions = []
+    @showprogress for (img,ref,fn) in data
+        caption = generate(net, data.vocab, img)[1]
+        push!(captions, caption)
+    end
+    # captions = (generate(net, data.vocab, img) for (img,ref,fn) in data)
     captions = join(captions, "\n")
     open(joinpath(path, "hypothesis"), "w") do f
         write(f, captions)

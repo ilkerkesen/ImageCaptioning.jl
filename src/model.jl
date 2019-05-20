@@ -27,7 +27,7 @@ end
 
 
 function ShowAndTell(; features="conv5", freeze_convnet=true, hiddensize=512,
-                     atype=Sloth._atype, vggfile=nothing, pdrop=0.5f0,
+                     atype=Sloth._atype, vggfile=nothing, pdrop=0.0f0,
                      vocabsize=2541, embedsize=512)
     convnet = load_vgg(
         vggfile; atype=atype, features=features, freeze=freeze_convnet)
@@ -59,11 +59,11 @@ function ShowAttendAndTell(; features="conv5", freeze_convnet=true, hiddensize=5
 end
 
 
-function loss(net::CaptionNetwork, image, words)
+function loss(net::CaptionNetwork, image, words; pdrop=net.pdrop)
     visual = extract_features(net, image)
     initstate!(net, visual)
     input_words, output_words = words[:, 1:end-1], words[:, 2:end]
-    scores, _ = decode(net, visual, input_words)
+    scores, _ = decode(net, visual, input_words; pdrop=pdrop)
     nll(scores, output_words)
 end
 
@@ -77,8 +77,9 @@ function extract_features(net::ShowAndTell, image)
     ndims(x) == 2 && return x
     D, B = size(x)[end-1:end]
     wsize = size(x,1)
-    x = reshape(x, :, D, B)
-    x = mean(x, dims=1)
+    # x = reshape(x, :, D, B)
+    # x = mean(x, dims=1)
+    x = pool(x; window=wsize, mode=2)
     x = reshape(x, D, B)
     x = net.project(x)
 end
@@ -105,8 +106,7 @@ function initstate!(net::ShowAttendAndTell, visual)
 end
 
 
-function decode(net::ShowAndTell, visual, input_words)
-    pdrop = net.pdrop
+function decode(net::ShowAndTell, visual, input_words; pdrop=net.pdrop)
     net.decoder(visual)
     embed = net.embedding(input_words)
     embed = dropout(embed, pdrop; drop=pdrop>0.0)
@@ -118,14 +118,13 @@ function decode(net::ShowAndTell, visual, input_words)
 end
 
 
-function decode(net::ShowAttendAndTell, visual, input_words)
-    pdrop = net.pdrop
+function decode(net::ShowAttendAndTell, visual, input_words; pdrop=net.pdrop)
     T = size(input_words, 2)
     B = size(visual)[end]
     hiddens = []
     αs = []
     for t = 1:T
-        h, α = step!(net, visual, input_words[:,t])
+        h, α = step!(net, visual, input_words[:,t]; pdrop=0.0)
         push!(hiddens, reshape(h, :, B))
         push!(αs, α)
     end
@@ -145,7 +144,7 @@ function decode(net::CaptionNetwork, vocab::Vocabulary, visual, maxlen=20)
 
     for t = 1:maxlen
         prev_word = words[end]
-        hidden, o = step!(net, visual, prev_word)
+        hidden, o = step!(net, visual, prev_word; pdrop=0.0)
         scores = net.predict(hidden)
         next_word = argmax(Array(scores))[1]
         next_word in (eos, pad) && break
@@ -160,8 +159,7 @@ function decode(net::CaptionNetwork, vocab::Vocabulary, visual, maxlen=20)
 end
 
 
-function step!(net::ShowAndTell, visual, word)
-    pdrop = net.pdrop
+function step!(net::ShowAndTell, visual, word; pdrop=net.pdrop)
     embed = net.embedding(word)
     embed = dropout(embed, pdrop; drop=pdrop>0.0)
     net.decoder(embed)
@@ -170,8 +168,7 @@ function step!(net::ShowAndTell, visual, word)
 end
 
 
-function step!(net::ShowAttendAndTell, visual, word)
-    pdrop = net.pdrop
+function step!(net::ShowAttendAndTell, visual, word; pdrop=net.pdrop)
     embed = net.embedding(word)
     embed = dropout(embed, pdrop; drop=pdrop>0.0)
     α, ctx = net.attention(visual, net.decoder.h)
