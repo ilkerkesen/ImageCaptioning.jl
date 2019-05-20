@@ -1,7 +1,10 @@
 import Sloth: matconvnet, VGG, load_weights!
 
 
-mutable struct ShowAndTell
+abstract type CaptionNetwork end
+
+
+mutable struct ShowAndTell <: CaptionNetwork
     convnet
     project
     embedding
@@ -12,9 +15,8 @@ mutable struct ShowAndTell
 end
 
 
-mutable struct ShowAttendAndTell
+mutable struct ShowAttendAndTell <: CaptionNetwork
     convnet
-    project
     embedding
     decoder
     predict
@@ -27,7 +29,8 @@ end
 function ShowAndTell(; features="conv5", freeze_convnet=true, hiddensize=512,
                      atype=Sloth._atype, vggfile=nothing, pdrop=0.5f0,
                      vocabsize=2541, embedsize=512)
-    convnet = load_vgg(vggfile; atype=atype, features=features)
+    convnet = load_vgg(
+        vggfile; atype=atype, features=features, freeze=freeze_convnet)
     features_dim = 4096
     if features == "conv5" || features == "pool5"
         features_dim = 512
@@ -44,125 +47,152 @@ end
 function ShowAttendAndTell(; features="conv5", freeze_convnet=true, hiddensize=512,
                            atype=Sloth._atype, vggfile=nothing, pdrop=0.5f0,
                            vocabsize=2541, embedsize=512, attentionsize=512)
-    convnet = load_vgg(vggfile; atype=atype, features=features)
-    features_dim = 4096
-    if features == "conv5" || features == "pool5"
-        features_dim = 512
-    end
-    project = Linear(features_dim, embedsize; atype=atype)
+    convnet = load_vgg(
+        vggfile; atype=atype, features=features, freeze=freeze_convnet)
+    features_dim = 512
     embedding = Embedding(vocabsize, embedsize; atype=atype)
-    decoder = RNN(embedsize, hiddensize)
+    decoder = RNN(embedsize+features_dim, hiddensize)
     predict = Linear(hiddensize, vocabsize; atype=atype)
-    attention = Attention(hiddensize, visualsize, visualsize; atype=atype)
-    ShowAttendAndTell(convnet, project, embedding, decoder, predict,
-                      attention, pdrop, freeze_convnet)
+    attention = Attention(features_dim, hiddensize, features_dim; atype=atype)
+    ShowAttendAndTell(convnet, embedding, decoder, predict, attention,
+                      pdrop, freeze_convnet)
 end
 
 
+function loss(net::CaptionNetwork, image, words)
+    visual = extract_features(net, image)
+    initstate!(net, visual)
+    input_words, output_words = words[:, 1:end-1], words[:, 2:end]
+    scores, _ = decode(net, visual, input_words)
+    nll(scores, output_words)
+end
 
-function (model::ShowAndTell)(image, words; h=0, c=0,
-                              freeze_convnet=model.freeze_convnet)
-    model.decoder.h = h; model.decoder.c = c
-    visual = extract_features(model, image; freeze_convnet=freeze_convnet)
-    visual = model.project(visual)
-    visual = dropout(visual, model.pdrop; drop=model.pdrop==0.0)
-    visual = reshape(visual, size(visual)..., 1)
-    model.decoder(visual)
-    x, y = words[:, 1:end-1], words[:, 2:end]
-    embed = model.embedding(x)
-    embed = dropout(embed, model.pdrop; drop=model.pdrop==0.0)
-    hidden = model.decoder(embed)
+
+function extract_features(net::ShowAndTell, image)
+    x = image
+    ndims(x) == 2 && return x
+    if ndims(x) == 4 && size(x,3) == 3
+        x = net.convnet(x)
+    end
+    ndims(x) == 2 && return x
+    D, B = size(x)[end-1:end]
+    wsize = size(x,1)
+    x = reshape(x, :, D, B)
+    x = mean(x, dims=1)
+    x = reshape(x, D, B)
+    x = net.project(x)
+end
+
+
+function extract_features(net::ShowAttendAndTell, image)
+    size(image,3) != 3 && return image
+    features = net.convnet(image)
+end
+
+
+function initstate!(net::ShowAndTell, visual)
+    net.decoder.h = 0
+    net.decoder.c = 0
+end
+
+
+function initstate!(net::ShowAttendAndTell, visual)
+    D, B = size(visual)[end-1:end]
+    hidden = mean(reshape(visual, :, D, B), dims=1)
+    hidden = reshape(hidden, D, B, 1)
+    net.decoder.h = hidden
+    net.decoder.c = hidden
+end
+
+
+function decode(net::ShowAndTell, visual, input_words)
+    pdrop = net.pdrop
+    net.decoder(visual)
+    embed = net.embedding(input_words)
+    embed = dropout(embed, pdrop; drop=pdrop>0.0)
+    hidden = net.decoder(embed)
     hidden = reshape(hidden, size(hidden,1), :)
-    hidden = dropout(hidden, model.pdrop; drop=model.pdrop==0.0)
-    scores = model.predict(hidden)
-    nll(scores, y; average=true)
+    hidden = dropout(hidden, pdrop; drop=pdrop>0.0)
+    scores = net.predict(hidden)
+    return scores, nothing
 end
 
 
-(model::ShowAndTell)(d::TrainLoader) = mean(model(x,y) for (x,y) in d)
+function decode(net::ShowAttendAndTell, visual, input_words)
+    pdrop = net.pdrop
+    T = size(input_words, 2)
+    B = size(visual)[end]
+    hiddens = []
+    αs = []
+    for t = 1:T
+        h, α = step!(net, visual, input_words[:,t])
+        push!(hiddens, reshape(h, :, B))
+        push!(αs, α)
+    end
+    hidden = cat(hiddens..., dims=2)
+    hidden = dropout(hidden, pdrop; drop=pdrop>0.0)
+    scores = net.predict(hidden)
+    return scores, αs
+end
 
 
-function (model::ShowAndTell)(image; maxlen=20, h=0, c=0,
-                              start_token=1, end_token=10)
-    model.decoder.h = h; model.decoder.c = c
-    visual = extract_features(model, image)
-    visual = model.project(visual)
-    visual = reshape(visual, size(visual)..., 1)
-    hidden = model.decoder(visual)
-    words = Any[start_token]
+function decode(net::CaptionNetwork, vocab::Vocabulary, visual, maxlen=20)
+    sos = vocab.w2i["<sos>"]
+    eos = vocab.w2i["<eos>"]
+    pad = vocab.w2i["<pad>"]
+    words = Any[sos]
+    other = []
 
     for t = 1:maxlen
-        embed = model.embedding(words[end])
-        hidden = model.decoder(embed)
-        hidden = reshape(hidden, size(hidden,1), :)
-        scores = model.predict(hidden)
-        push!(words, argmax(Array(scores))[1])
+        prev_word = words[end]
+        hidden, o = step!(net, visual, prev_word)
+        scores = net.predict(hidden)
+        next_word = argmax(Array(scores))[1]
+        next_word in (eos, pad) && break
+        push!(words, next_word)
+        push!(other, o)
     end
-    return words
+
+    popfirst!(words)
+    words = [map(w->vocab.i2w[w], words)..., "."]
+    sentence = join(words, " ")
+    return sentence, other
 end
 
 
-function extract_features(model::ShowAndTell, x; freeze_convnet=true)
-    ndims(x) == 2 && return x
-    num_channels = size(x,3)
-    y = x
-    if num_channels == 3
-        y = model.convnet(y)
-        y = freeze_convnet ? value(y) : y
-    end
-    ndims(y) == 2 && return y
-    windowsize = size(y,1)
-    mat(pool(y; window=windowsize,mode=2))
+function step!(net::ShowAndTell, visual, word)
+    pdrop = net.pdrop
+    embed = net.embedding(word)
+    embed = dropout(embed, pdrop; drop=pdrop>0.0)
+    net.decoder(embed)
+    hidden = net.decoder.h
+    return hidden, nothing
 end
 
 
-mutable struct Attention
-    features_layer
-    condition_layer
-    scores_layer
+function step!(net::ShowAttendAndTell, visual, word)
+    pdrop = net.pdrop
+    embed = net.embedding(word)
+    embed = dropout(embed, pdrop; drop=pdrop>0.0)
+    α, ctx = net.attention(visual, net.decoder.h)
+    input = vcat(embed, ctx)
+    net.decoder(input)
+    hidden = net.decoder.h
+    return hidden, α
 end
 
 
-function Attention(features_dim::Int, condition_dim::Int, output_dim::Int;
-                   atype=Sloth._atype)
-    features_layer = Linear(features_dim, output_dim; atype=atype)
-    condition_layer = Linear(condition_dim, output_dim; atype=atype)
-    scores_layer = Linear(output_dim, 1; atype=atype)
-    return Attention(features_layer, condition_layer, scores_layer)
+function generate(net::CaptionNetwork, vocab::Vocabulary, image; maxlen=20)
+    visual = extract_features(net, image)
+    initstate!(net, visual)
+    decode(net, vocab, visual, maxlen)
 end
 
 
-function (l::Attention)(a, c)
-    # features projection - a little bit tricky
-    L1, L2, D, B = size(a); L = L1*L2
-    a = reshape(a, :, D, B)
-    a0 = permutedims(a, (2,1,3))
-    a0 = reshape(a0, D, :)
-    a1 = l.features_layer(a0)
-    a2 = reshape(a1, :, L, B)
-
-    # condition projection
-    c1 = l.condition_layer(c)
-    c2 = reshape(c1, :, 1, B)
-
-    et = tanh.(a2 .+ c2)
-    et = reshape(et, :, B*L)
-
-    scores = reshape(l.scores_layer(et), L, B)
-    probs = softmax(scores, dims=2)
-
-    α = reshape(probs, L, 1, B)
-    context = α .* a
-    context = sum(context, dims=1)
-
-    α = reshape(α, L, B)
-    context = reshape(context, D, B)
-    return α, context
-end
+# (net::ShowAndTell)(d::TrainLoader) = mean(model(x,y) for (x,y) in d)
 
 
-
-function load_vgg(filepath; atype=Sloth._atype, features="conv5")
+function load_vgg(filepath; atype=Sloth._atype, features="conv5", freeze=true)
     convnet = VGG(; atype=atype)
     vggmat = matconvnet(filepath)
     Sloth.load_weights!(convnet, vggmat)
@@ -173,5 +203,12 @@ function load_vgg(filepath; atype=Sloth._atype, features="conv5")
         drop_last_nitems = 6
     end
     for i = 1:drop_last_nitems; pop!(convnet.layers); end
+    !freeze && return convnet
+    for i in length(convnet.layers)
+        if isa(convnet.layers[i], Conv) || isa(convnet.layers[i], FullyConnected)
+            convnet.layers[i].w = w.value
+            convnet.layers[i].b = b.value
+        end
+    end
     return convnet
 end

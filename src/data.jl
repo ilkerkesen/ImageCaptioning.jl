@@ -17,7 +17,10 @@ function Dataset(root_path, features_suffix="default")
     get_split(x) = filter(entry->entry["split"]==x, jsondata["images"])
     trn, val, tst = [get_split(x) for x in ("train","val","test")]
     trn, val, tst = [get_instances(x) for x in (trn, val, tst)]
-    # sort!(val, by=x->length(x[2]), rev=true)
+    EVAL_DIR = mktempdir()
+    @show EVAL_DIR
+    prepare_references(val, "val")
+    prepare_references(tst, "tst")
     name = jsondata["dataset"]
     imgpath = abspath(joinpath(root_path, "Flicker8k_Dataset"))
     filename = "$name-features-$features_suffix.jld2"
@@ -64,6 +67,37 @@ function get_instances(images)
         push!(instances, (image["filename"], tokens))
     end
     return instances
+end
+
+
+function get_raw_instances(images)
+    instances = []
+    for image in images
+        sentences = [x["raw"] for x in image["sentences"]]
+        push!(instances, (image["filename"], sentences))
+    end
+    return instances
+end
+
+
+function prepare_references(data, data_split="val")
+    path = joinpath(EVAL_DIR, data_split)
+    !isdir(path) && mkdir(path)
+    fns = open(joinpath(path, "filenames"), "w")
+    refs = [open(joinpath(path,"reference$i"), "w") for i=0:4]
+    @showprogress for (filename, references) in data
+        write(fns, "$(filename)\n")
+        for (i,tokens) in enumerate(references)
+            ref = join([tokens..., ".\n"], " ")
+            write(refs[i], ref)
+        end
+    end
+    close(fns)
+    map(close, refs)
+    src = joinpath(DIR, "multi-bleu.pl")
+    trg = joinpath(path, "multi-bleu.pl")
+    cp(src, trg)
+    nothing
 end
 
 
@@ -148,8 +182,8 @@ end
 function EvalLoader(vocab, instances, images_path, features_path;
                     use_features=true, atype=Sloth._atype)
     num_instances = length(instances)
-    EvalLoader(vocab, instances, images_path, features_path, use_features, atype,
-               num_instances)
+    EvalLoader(vocab, instances, images_path, features_path, use_features,
+               atype, num_instances)
 end
 
 
