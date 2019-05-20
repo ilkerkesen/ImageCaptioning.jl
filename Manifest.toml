@@ -70,10 +70,10 @@ uuid = "00ebfdb7-1f24-5e51-bd34-a7502290713f"
 version = "0.5.2"
 
 [[CUDAapi]]
-deps = ["Libdl", "Logging"]
-git-tree-sha1 = "7700585ef08123a4087ad4c0c225d2d33ed44b42"
+deps = ["Libdl", "Logging", "Test"]
+git-tree-sha1 = "125122309a4387e0d18787cef0f03800fa57702a"
 uuid = "3895d2a7-ec45-59b8-82bb-cfc6a382f9b3"
-version = "1.0.0"
+version = "0.6.3"
 
 [[CatIndices]]
 deps = ["CustomUnitRanges", "OffsetArrays", "Test"]
@@ -184,9 +184,9 @@ uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 version = "1.0.6"
 
 [[FixedPointNumbers]]
-git-tree-sha1 = "5eac756947a90dad3899dad1d6c7eb90e8b58678"
+git-tree-sha1 = "d14a6fa5890ea3a7e5dcab6811114f132fec2b4b"
 uuid = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
-version = "0.6.0"
+version = "0.6.1"
 
 [[Graphics]]
 deps = ["Colors", "Compat", "NaNMath"]
@@ -232,9 +232,9 @@ version = "0.8.3"
 
 [[ImageDistances]]
 deps = ["ColorVectorSpace", "Colors", "Distances", "FixedPointNumbers", "ImageCore"]
-git-tree-sha1 = "6a5d39c88229d68405cd0a56a63073962f79d188"
+git-tree-sha1 = "aa69ce81260bcb5e950a5e3b48ccca15447c6d8c"
 uuid = "51556ac3-7006-55f5-8cb3-34580c88182d"
-version = "0.2.3"
+version = "0.2.4"
 
 [[ImageFiltering]]
 deps = ["CatIndices", "ColorVectorSpace", "Colors", "ComputationalResources", "DataStructures", "FFTViews", "FFTW", "FixedPointNumbers", "ImageCore", "LinearAlgebra", "MappedArrays", "OffsetArrays", "Requires", "StaticArrays", "Statistics", "TiledIteration"]
@@ -320,11 +320,11 @@ version = "0.20.0"
 
 [[Knet]]
 deps = ["AutoGrad", "CUDAapi", "FileIO", "JLD2", "Libdl", "LinearAlgebra", "Printf", "Random", "SpecialFunctions", "Statistics", "TimerOutputs"]
-git-tree-sha1 = "bd2d9a1c5897da5566aa436ea8fb2fa6b55bc931"
+git-tree-sha1 = "68c92dec7264df93c5638ae6a766344e0790ffc6"
 repo-rev = "modular-vgg"
 repo-url = "Knet"
 uuid = "1902f260-5fb4-5aff-8c31-6271790ab950"
-version = "1.2.1+"
+version = "1.2.1"
 
 [[LibCURL]]
 deps = ["BinaryProvider", "Libdl", "Printf", "Test"]
@@ -426,6 +426,12 @@ uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 deps = ["Unicode"]
 uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
+[[ProgressMeter]]
+deps = ["Distributed", "Printf", "Random", "Test"]
+git-tree-sha1 = "48058bc11607676e5bbc0b974af79106c6200787"
+uuid = "92933f4c-e287-5a05-a399-4b506db050ca"
+version = "0.9.0"
+
 [[REPL]]
 deps = ["InteractiveUtils", "Markdown", "Sockets"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -481,10 +487,8 @@ uuid = "699a6c99-e7fa-54fc-8d76-47d257e15c1d"
 version = "0.8.0"
 
 [[Sloth]]
-deps = ["Knet"]
-git-tree-sha1 = "0f5abd5401d181dbf1bfdaffca3c393bcca4b27b"
-repo-rev = "master"
-repo-url = "git@github.com:ilkerkesen/Sloth.jl.git"
+deps = ["FileIO", "ImageMagick", "Images", "JSON", "Knet", "MAT"]
+path = "/kuacc/users/ikesen16/.julia/dev/Sloth"
 uuid = "599f0d3e-fa5b-11e8-3d5f-e1ebc21cfa8f"
 version = "0.1.0"
 
